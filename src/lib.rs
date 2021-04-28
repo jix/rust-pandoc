@@ -794,9 +794,9 @@ pub enum OutputKind {
 #[derive(Default, Clone)]
 pub struct Pandoc {
     input: Option<InputKind>,
-    input_format: Option<(InputFormat, Vec<MarkdownExtension>)>,
+    input_format: Option<(InputFormat, Vec<MarkdownExtension>, Vec<MarkdownExtension>)>,
     output: Option<OutputKind>,
-    output_format: Option<(OutputFormat, Vec<MarkdownExtension>)>,
+    output_format: Option<(OutputFormat, Vec<MarkdownExtension>, Vec<MarkdownExtension>)>,
     latex_path_hint: Vec<PathBuf>,
     pandoc_path_hint: Vec<PathBuf>,
     filters: Vec<Rc<dyn Fn(String) -> String>>,
@@ -863,7 +863,17 @@ impl Pandoc {
         format: OutputFormat,
         extensions: Vec<MarkdownExtension>,
     ) -> &mut Pandoc {
-        self.output_format = Some((format, extensions));
+        self.output_format = Some((format, extensions, vec![]));
+        self
+    }
+    /// Set or overwrite the output format, removing some default extensions.
+    pub fn set_output_format_ext(
+        &mut self,
+        format: OutputFormat,
+        extensions: Vec<MarkdownExtension>,
+        remove_extensions: Vec<MarkdownExtension>,
+    ) -> &mut Pandoc {
+        self.output_format = Some((format, extensions, remove_extensions));
         self
     }
     /// Set or overwrite the input format
@@ -872,7 +882,17 @@ impl Pandoc {
         format: InputFormat,
         extensions: Vec<MarkdownExtension>,
     ) -> &mut Pandoc {
-        self.input_format = Some((format, extensions));
+        self.input_format = Some((format, extensions, vec![]));
+        self
+    }
+    /// Set or overwrite the input format, removing some default extensions.
+    pub fn set_input_format_ext(
+        &mut self,
+        format: InputFormat,
+        extensions: Vec<MarkdownExtension>,
+        remove_extensions: Vec<MarkdownExtension>,
+    ) -> &mut Pandoc {
+        self.input_format = Some((format, extensions, remove_extensions));
         self
     }
 
@@ -1020,11 +1040,14 @@ impl Pandoc {
 
     fn run(self) -> Result<Vec<u8>, PandocError> {
         let mut cmd = Command::new("pandoc");
-        if let Some((ref format, ref extensions)) = self.input_format {
+        if let Some((ref format, ref extensions, ref removed_extensions)) = self.input_format {
             use std::fmt::Write;
             let mut arg = format.to_string();
             for extension in extensions {
                 write!(arg, "+{}", extension).unwrap();
+            }
+            for extension in removed_extensions {
+                write!(arg, "-{}", extension).unwrap();
             }
             cmd.arg("-f").arg(arg);
         }
@@ -1077,11 +1100,14 @@ impl Pandoc {
         // always capture stderr
         cmd.stderr(std::process::Stdio::piped());
 
-        if let Some((ref format, ref extensions)) = self.output_format {
+        if let Some((ref format, ref extensions, ref removed_extensions)) = self.output_format {
             use std::fmt::Write;
             let mut arg = format.to_string();
             for extension in extensions {
                 write!(arg, "+{}", extension).unwrap();
+            }
+            for extension in removed_extensions {
+                write!(arg, "-{}", extension).unwrap();
             }
             cmd.arg("-t").arg(arg);
         }
@@ -1119,11 +1145,15 @@ impl Pandoc {
     /// Warning: this function can panic in a lot of places.
     pub fn generate_latex_template<T: AsRef<str> + ?Sized>(mut self, filename: &T) {
         let mut format = None;
-        if let Some((ref f, ref ext)) = self.output_format {
+        if let Some((ref f, ref ext, ref removed_ext)) = self.output_format {
             let mut s = f.to_string();
             for ext in ext {
                 use std::fmt::Write;
                 write!(&mut s, "+{}", ext).unwrap();
+            }
+            for ext in removed_ext {
+                use std::fmt::Write;
+                write!(&mut s, "-{}", ext).unwrap();
             }
             format = Some(s);
         }
@@ -1149,10 +1179,10 @@ impl Pandoc {
         pre.input = self.input.take();
         pre.print_pandoc_cmdline = self.print_pandoc_cmdline;
         match self.input_format.take() {
-            None => self.input_format = Some((InputFormat::Json, Vec::new())),
-            Some((fmt, ext)) => {
-                pre.input_format = Some((fmt, ext));
-                self.input_format = Some((InputFormat::Json, Vec::new()));
+            None => self.input_format = Some((InputFormat::Json, Vec::new(), Vec::new())),
+            Some((fmt, ext, removed_ext)) => {
+                pre.input_format = Some((fmt, ext, removed_ext));
+                self.input_format = Some((InputFormat::Json, Vec::new(), Vec::new()));
             }
         }
         let o = pre.run()?;
