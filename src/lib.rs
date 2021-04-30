@@ -1,3 +1,4 @@
+#![allow(clippy::upper_case_acronyms, unstable_name_collisions)]
 //! API that wraps the pandoc command line tool
 
 use itertools::Itertools;
